@@ -6,10 +6,12 @@ from email.mime.text import MIMEText
 import pyodbc
 from time import sleep
 import datetime
+import json
 
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+IS_MOCK_DB = True if config['database']['is_mock_db'] == 'True' else False # для локального тестирования приложение работает с симулятором базы данных файл mock-db.json
 CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn name
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
@@ -91,8 +93,15 @@ def test_send_email():
 
 def robot():
     # стартует сервис отправки сообщений из базы данных
-    cnxn = pyodbc.connect(CONNECTION_STRING)
-    cursor = cnxn.cursor()
+    print('MOCK_DB =', IS_MOCK_DB, type(IS_MOCK_DB))
+    if IS_MOCK_DB:
+        #  при IS_MOCK_DB приложение работает с mock-database (файл mock-db.json)
+        create_mock_db()
+        cnxn, cursor = '', ''
+    else:
+        cnxn = pyodbc.connect(CONNECTION_STRING)
+        cursor = cnxn.cursor()
+        print('Создано подключение к базе данных.')  ###
 
     while True:
         emails_data = db_emails_query(cursor)
@@ -109,7 +118,7 @@ def send_mail(cnxn, cursor, emails_data):
     with smtplib.SMTP_SSL(HOST, PORT, context=context) as server:
         server.login(MY_ADDRESS, PASSWORD)
         for e in emails_data:
-            print("e = ", e)  ### test
+            print("НОВОЕ СООБЩЕНИЕ  ", e)  ### test
             addrs = e[3].split(';')
             for a in addrs:
                 msg = MIMEMultipart()       
@@ -122,24 +131,62 @@ def send_mail(cnxn, cursor, emails_data):
                 rec_to_log(a.strip(), e[0])
             db_emails_rec_date(cnxn, cursor, id=e[0])
 
+# === DATABASE FUNCTIONS ===
 def db_emails_query(cursor):
     # выборка из базы данных записей с e-mail
-    cursor.execute('select id, msg_subject, msg_text, receivers from mailsender_db.dbo.emails where handling_date is null')
-    rows = cursor.fetchall()  # список кортежей
+    if IS_MOCK_DB:
+        rows = mock_db_emails_query()
+    else:
+        cursor.execute('select id, msg_subject, msg_text, receivers from mailsender_db.dbo.emails where handling_date is null')
+        rows = cursor.fetchall()  # список кортежей
     return rows
 
 def db_emails_rec_date(cnxn, cursor, id):
     # пишет в базу дату/время отправки сообщения
-    cursor.execute(f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}')
-    cnxn.commit()
+    if IS_MOCK_DB:
+        mock_db_emails_rec_date(id)
+    else:
+        cursor.execute(f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}')
+        cnxn.commit()
 
 def rec_to_log(receiver, id):
     # пишет в лог-файл запись об отправке сообщения
     current_time = str(datetime.datetime.now())
     rec = f'{current_time}  --  send message to {receiver} [ id = {id} ]\n'
-    with open('mail-log.log', 'a') as f:
+    with open('log-mailsender.log', 'a') as f:
         f.write(rec)
 
+def create_mock_db():
+    # создает mock-database при запуске приложения, если IS_MOCK_DB = True
+    data = {'emails': [
+        {'id': 1, 'msg_subject': 'test1', 'msg_text': 'This is the test message 1!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}, 
+        {'id': 2, 'msg_subject': 'test2', 'msg_text': 'This is the test message 2!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}, 
+        {'id': 3, 'msg_subject': 'test3', 'msg_text': 'This is the test message 3!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}
+        ]}
+    with open('mock-db.json', 'w') as f:
+        json.dump(data, f)
+    print('Создана MOCK база данных  -  файл mock-db.json')
+
+def mock_db_emails_query():
+    # mock-аналог select * from data where handling_date is null
+    rows = []
+    with open('mock-db.json') as f:
+        data = json.load(f)
+    for i in data['emails']:
+        if not i['handling_date']:
+            row = (i['id'], i['msg_subject'], i['msg_text'], i['receivers'])
+            rows.append(row)
+    return rows
+
+def mock_db_emails_rec_date(id):
+    # mock-аналог f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}'
+    with open('mock-db.json', 'r+') as f:
+        data = json.load(f)
+        for i in range( len(data['emails']) ):
+            if data['emails'][i]['id'] == id and not data['emails'][i]['handling_date']:
+                data['emails'][i]['handling_date'] = str(datetime.datetime.now())
+                f.seek(0)
+                json.dump(data, f)
 
 # ============== window sign in
 window = tk.Tk()
