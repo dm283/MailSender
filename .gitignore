@@ -3,4 +3,6 @@
 *.json
 venv/
 рабочие/
+build/
 config.ini
+setup.py
