@@ -1,6 +1,7 @@
 *.log
 *.txt
 *.json
+uemail.sql
 venv/
 рабочие/
 build/
