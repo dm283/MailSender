@@ -5,12 +5,14 @@ import asyncio
 from aiosmtplib import SMTP
 import datetime
 import json
-import pyodbc
+import aioodbc
 
 config = configparser.ConfigParser()
 config.read('config.ini')
 
 IS_MOCK_DB = True if config['database']['is_mock_db'] == 'True' else False # для локального тестирования приложение работает с симулятором базы данных файл mock-db.json
+DB = config['database']['db']  # база данных mssql/posgres
+DB_TABLE = config['database']['db_table']  # db.schema.table
 CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn name
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
@@ -31,12 +33,10 @@ BTN_3_COLOR = 'SlateGray'
 # === INTERFACE FUNCTIONS ===
 async def btn_sign_click():
     # кнопка sign-in
-    print('CLICK SIGN IN')  ####
     global SIGN_IN_FLAG
     user = ent_user.get()
     password = ent_password.get()
     if user == 'admin' and password == 'admin':
-        print('SIGN IN = OK!!!')  #####
         lbl_msg_sign["text"] = ''
         SIGN_IN_FLAG = True
         root.destroy()
@@ -95,9 +95,9 @@ async def robot():
         await create_mock_db()
         cnxn, cursor = '', ''
     else:
-        cnxn = pyodbc.connect(CONNECTION_STRING)
-        cursor = cnxn.cursor()
-        print('Создано подключение к базе данных.')  ###
+        cnxn = await aioodbc.connect(dsn=CONNECTION_STRING, loop=loop_admin)
+        cursor = await cnxn.cursor()
+        print(f'Создано подключение к базе данных {DB}')  ###
 
     while True:
         emails_data = await db_emails_query(cursor)
@@ -129,11 +129,12 @@ async def db_emails_rec_date(cnxn, cursor, id):
     if IS_MOCK_DB:
         await mock_db_emails_rec_date(id)
     else:
-        cursor.execute(f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}')
-        cnxn.commit()
+        dt_string = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        await cursor.execute(f"update {DB_TABLE} set handling_date = '{dt_string}' where id = {id}")
+        await cnxn.commit()
 
 async def mock_db_emails_rec_date(id):
-    # mock-аналог f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}'
+    # mock-аналог db_emails_rec_date()
     with open('mock-db.json', 'r+') as f:
         data = json.load(f)
         for i in range( len(data['emails']) ):
@@ -150,16 +151,16 @@ async def rec_to_log(receiver, id):
         f.write(rec)
 
 async def db_emails_query(cursor):
-    # выборка из базы данных записей с e-mail
+    # выборка из базы данных необработанных (новых) записей
     if IS_MOCK_DB:
         rows = await mock_db_emails_query()
     else:
-        cursor.execute('select id, msg_subject, msg_text, receivers from mailsender_db.dbo.emails where handling_date is null')
-        rows = cursor.fetchall()  # список кортежей
+        await cursor.execute(f'select id, msg_subject, msg_text, receivers from {DB_TABLE} where handling_date is null')
+        rows = await cursor.fetchall()  # список кортежей
     return rows
 
 async def mock_db_emails_query():
-    # mock-аналог select * from data where handling_date is null
+    # mock-аналог db_emails_query()
     rows = []
     with open('mock-db.json') as f:
         data = json.load(f)

@@ -2,6 +2,7 @@
 *.txt
 *.json
 uemail.sql
+create-database-postgre.sql
 venv/
 рабочие/
 build/

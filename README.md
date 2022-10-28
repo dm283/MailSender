@@ -3,12 +3,12 @@
 СЕРВИС АВТОМАТИЗАЦИИ ОТПРАВКИ E-MAIL СООБЩЕНИЙ
 
 Файлом приложения является Mailsender-app.py. Возможна его компиляция в exe-файл.<br/>
-Внешние python-библиотеки:  aiosmtplib, pyodbc.
+Внешние python-библиотеки:  aiosmtplib, aioodbc.
 
 1) В директорию с Mailsender-app.py добавляем файл config.ini, при необходимости настраиваем его (файл у разработчика приложения).
 
 2) Возможны 2 варианта работы приложения с базой данных:</br>
-   -  при использовании базы данных Microsoft SQL (is_mock_db = False в config.ini) выполняем команды в файле create-database-mssql.sql.<br/>
+   -  при использовании базы данных Microsoft SQL/PostgreSQL выполняем команды в файле create-database-*.sql (*=mssql/postgre), в config.ini устанавливаем is_mock_db=False, и соответствующие db, dsn, db_table.<br/>
    -  для работы с симулятором базы данных (локальный json-файл) устанавливаем is_mock_db = True в config.ini, файл с бд будет создан автоматически при запуске робота (Start robot).
 
 3) Запускаем файл приложения.
