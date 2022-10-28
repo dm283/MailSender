@@ -130,7 +130,7 @@ async def db_emails_rec_date(cnxn, cursor, id):
         await mock_db_emails_rec_date(id)
     else:
         dt_string = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        await cursor.execute(f"update {DB_TABLE} set handling_date = '{dt_string}' where id = {id}")
+        await cursor.execute(f"update {DB_TABLE} set dates = '{dt_string}' where UniqueIndexField = {id}")
         await cnxn.commit()
 
 async def mock_db_emails_rec_date(id):
@@ -138,8 +138,8 @@ async def mock_db_emails_rec_date(id):
     with open('mock-db.json', 'r+') as f:
         data = json.load(f)
         for i in range( len(data['emails']) ):
-            if data['emails'][i]['id'] == id and not data['emails'][i]['handling_date']:
-                data['emails'][i]['handling_date'] = str(datetime.datetime.now())
+            if data['emails'][i]['UniqueIndexField'] == id and not data['emails'][i]['dates']:
+                data['emails'][i]['dates'] = str(datetime.datetime.now())
                 f.seek(0)
                 json.dump(data, f)
 
@@ -155,7 +155,8 @@ async def db_emails_query(cursor):
     if IS_MOCK_DB:
         rows = await mock_db_emails_query()
     else:
-        await cursor.execute(f'select id, msg_subject, msg_text, receivers from {DB_TABLE} where handling_date is null')
+        #await cursor.execute(f'select id, msg_subject, msg_text, receivers from {DB_TABLE} where handling_date is null')
+        await cursor.execute(f'select UniqueIndexField, subj, textemail, adrto from {DB_TABLE} where dates is null')
         rows = await cursor.fetchall()  # список кортежей
     return rows
 
@@ -165,17 +166,17 @@ async def mock_db_emails_query():
     with open('mock-db.json') as f:
         data = json.load(f)
     for i in data['emails']:
-        if not i['handling_date']:
-            row = (i['id'], i['msg_subject'], i['msg_text'], i['receivers'])
+        if not i['dates']:
+            row = (i['UniqueIndexField'], i['subj'], i['textemail'], i['adrto'])
             rows.append(row)
     return rows
 
 async def create_mock_db():
     # создает mock-database при запуске приложения, если IS_MOCK_DB = True
     data = {'emails': [
-        {'id': 1, 'msg_subject': 'test1', 'msg_text': 'This is the test message 1!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}, 
-        {'id': 2, 'msg_subject': 'test2', 'msg_text': 'This is the test message 2!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}, 
-        {'id': 3, 'msg_subject': 'test3', 'msg_text': 'This is the test message 3!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}
+        {'UniqueIndexField': 1, 'subj': 'test1', 'textemail': 'This is the test message 1!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}, 
+        {'UniqueIndexField': 2, 'subj': 'test2', 'textemail': 'This is the test message 2!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}, 
+        {'UniqueIndexField': 3, 'subj': 'test3', 'textemail': 'This is the test message 3!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}
         ]}
     with open('mock-db.json', 'w') as f:
         json.dump(data, f)
