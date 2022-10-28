@@ -5,12 +5,14 @@ import asyncio
 from aiosmtplib import SMTP
 import datetime
 import json
-import pyodbc
+import aioodbc
 
 config = configparser.ConfigParser()
 config.read('config.ini')
 
 IS_MOCK_DB = True if config['database']['is_mock_db'] == 'True' else False # для локального тестирования приложение работает с симулятором базы данных файл mock-db.json
+DB = config['database']['db']  # база данных mssql/posgres
+DB_TABLE = config['database']['db_table']  # db.schema.table
 CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn name
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
@@ -31,12 +33,10 @@ BTN_3_COLOR = 'SlateGray'
 # === INTERFACE FUNCTIONS ===
 async def btn_sign_click():
     # кнопка sign-in
-    print('CLICK SIGN IN')  ####
     global SIGN_IN_FLAG
     user = ent_user.get()
     password = ent_password.get()
     if user == 'admin' and password == 'admin':
-        print('SIGN IN = OK!!!')  #####
         lbl_msg_sign["text"] = ''
         SIGN_IN_FLAG = True
         root.destroy()
@@ -95,9 +95,9 @@ async def robot():
         await create_mock_db()
         cnxn, cursor = '', ''
     else:
-        cnxn = pyodbc.connect(CONNECTION_STRING)
-        cursor = cnxn.cursor()
-        print('Создано подключение к базе данных.')  ###
+        cnxn = await aioodbc.connect(dsn=CONNECTION_STRING, loop=loop_admin)
+        cursor = await cnxn.cursor()
+        print(f'Создано подключение к базе данных {DB}')  ###
 
     while True:
         emails_data = await db_emails_query(cursor)
@@ -129,16 +129,17 @@ async def db_emails_rec_date(cnxn, cursor, id):
     if IS_MOCK_DB:
         await mock_db_emails_rec_date(id)
     else:
-        cursor.execute(f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}')
-        cnxn.commit()
+        dt_string = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        await cursor.execute(f"update {DB_TABLE} set dates = '{dt_string}' where UniqueIndexField = {id}")
+        await cnxn.commit()
 
 async def mock_db_emails_rec_date(id):
-    # mock-аналог f'update mailsender_db.dbo.emails set handling_date = getdate() where id = {id}'
+    # mock-аналог db_emails_rec_date()
     with open('mock-db.json', 'r+') as f:
         data = json.load(f)
         for i in range( len(data['emails']) ):
-            if data['emails'][i]['id'] == id and not data['emails'][i]['handling_date']:
-                data['emails'][i]['handling_date'] = str(datetime.datetime.now())
+            if data['emails'][i]['UniqueIndexField'] == id and not data['emails'][i]['dates']:
+                data['emails'][i]['dates'] = str(datetime.datetime.now())
                 f.seek(0)
                 json.dump(data, f)
 
@@ -150,31 +151,32 @@ async def rec_to_log(receiver, id):
         f.write(rec)
 
 async def db_emails_query(cursor):
-    # выборка из базы данных записей с e-mail
+    # выборка из базы данных необработанных (новых) записей
     if IS_MOCK_DB:
         rows = await mock_db_emails_query()
     else:
-        cursor.execute('select id, msg_subject, msg_text, receivers from mailsender_db.dbo.emails where handling_date is null')
-        rows = cursor.fetchall()  # список кортежей
+        #await cursor.execute(f'select id, msg_subject, msg_text, receivers from {DB_TABLE} where handling_date is null')
+        await cursor.execute(f'select UniqueIndexField, subj, textemail, adrto from {DB_TABLE} where dates is null')
+        rows = await cursor.fetchall()  # список кортежей
     return rows
 
 async def mock_db_emails_query():
-    # mock-аналог select * from data where handling_date is null
+    # mock-аналог db_emails_query()
     rows = []
     with open('mock-db.json') as f:
         data = json.load(f)
     for i in data['emails']:
-        if not i['handling_date']:
-            row = (i['id'], i['msg_subject'], i['msg_text'], i['receivers'])
+        if not i['dates']:
+            row = (i['UniqueIndexField'], i['subj'], i['textemail'], i['adrto'])
             rows.append(row)
     return rows
 
 async def create_mock_db():
     # создает mock-database при запуске приложения, если IS_MOCK_DB = True
     data = {'emails': [
-        {'id': 1, 'msg_subject': 'test1', 'msg_text': 'This is the test message 1!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}, 
-        {'id': 2, 'msg_subject': 'test2', 'msg_text': 'This is the test message 2!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}, 
-        {'id': 3, 'msg_subject': 'test3', 'msg_text': 'This is the test message 3!', 'receivers': 'testbox283@yandex.ru; testbox283@mail.ru', 'handling_date': None}
+        {'UniqueIndexField': 1, 'subj': 'test1', 'textemail': 'This is the test message 1!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}, 
+        {'UniqueIndexField': 2, 'subj': 'test2', 'textemail': 'This is the test message 2!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}, 
+        {'UniqueIndexField': 3, 'subj': 'test3', 'textemail': 'This is the test message 3!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}
         ]}
     with open('mock-db.json', 'w') as f:
         json.dump(data, f)
