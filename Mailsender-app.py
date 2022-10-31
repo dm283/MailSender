@@ -1,11 +1,14 @@
 import configparser
+import re
+import datetime
+import json
 import tkinter as tk
 from tkinter import ttk
 import asyncio
 from aiosmtplib import SMTP
-import datetime
-import json
 import aioodbc
+from aioimaplib import aioimaplib
+import email
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -16,10 +19,16 @@ DB_TABLE = config['database']['db_table']  # db.schema.table
 CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn name
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
+ADMIN_EMAIL = config['common']['admin_email']  # почта админа
 MY_ADDRESS, PASSWORD = config['smtp_server']['my_address'], config['smtp_server']['password']
 HOST, PORT = config['smtp_server']['host'], config['smtp_server']['port']
-RECEIVER_TEST_MESSAGE = config['smtp_server']['receiver_test_message']
-TEST_MESSAGE = f"""To: {RECEIVER_TEST_MESSAGE}\nFrom: {MY_ADDRESS}\nSubject: ***AioSmtplib TEST message***\n\nThis is the test message sent via aiosmtplib and tkinter async"""
+TEST_MESSAGE = f"""To: {ADMIN_EMAIL}\nFrom: {MY_ADDRESS}
+Subject: Mailsender - тестовое сообщение\n
+Это тестовое сообщение отправленное сервисом Mailsender.""".encode('utf8')
+UNDELIVERED_MESSAGE = f"""To: {ADMIN_EMAIL}\nFrom: {MY_ADDRESS}
+Subject: Mailsender - недоставленное сообщение\n
+Это сообщение отправленно сервисом Mailsender.\n""".encode('utf8')
+HOST_IMAP, PORT_IMAP = config['imap_server']['host'], config['imap_server']['port']
 
 SIGN_IN_FLAG = False
 THEME_COLOR = 'Gainsboro'
@@ -46,7 +55,7 @@ async def btn_sign_click():
 async def btn_test_click():
     # кнопка Send test email
     await test_send_email()
-    lbl_msg_admin["text"] = f'Test e-mail was send to \n {RECEIVER_TEST_MESSAGE}'
+    lbl_msg_admin["text"] = f'Test e-mail was send to \n {ADMIN_EMAIL}'
 
 async def btn_robot_run_click():
     # кнопка Start robot
@@ -83,13 +92,13 @@ async def test_send_email():
     print(' test msg is sending...')
     smtp_client = SMTP(hostname=HOST, port=PORT, use_tls=True, username=MY_ADDRESS, password=PASSWORD)
     await smtp_client.connect()
-    await smtp_client.sendmail(MY_ADDRESS, RECEIVER_TEST_MESSAGE, TEST_MESSAGE)
+    await smtp_client.sendmail(MY_ADDRESS, ADMIN_EMAIL, TEST_MESSAGE)
     await smtp_client.quit()
     print('TEST MSG WAS SEND!')
 
 async def robot():
     # стартует сервис отправки сообщений из базы данных
-    print('MOCK_DB =', IS_MOCK_DB, type(IS_MOCK_DB))
+    print('MOCK_DB =', IS_MOCK_DB)
     if IS_MOCK_DB:
         #  при IS_MOCK_DB приложение работает с mock-database (файл mock-db.json)
         await create_mock_db()
@@ -107,9 +116,24 @@ async def robot():
             await send_mail(cnxn, cursor, emails_data)
         else:
             print('НЕТ НОВЫХ СООБЩЕНИЙ')  ### test
+
+        #  недоставленные сообщения: проверка оповещений, запись в лог и отправка на почту админа
+        undelivereds = await check_undelivered(HOST_IMAP, MY_ADDRESS, PASSWORD)
+        if len(undelivereds) > 0:
+            smtp_client = SMTP(hostname=HOST, port=PORT, use_tls=True, username=MY_ADDRESS, password=PASSWORD)
+            await smtp_client.connect()
+            for u in undelivereds:
+                print(f'undelivered:  {u}')
+                log_rec = f'Недоставлено сообщение, отправленное {u[0]} на несуществующий адрес {u[1]}'
+                await rec_to_log(log_rec)
+                msg = UNDELIVERED_MESSAGE + log_rec.encode('utf-8')
+                await smtp_client.sendmail(MY_ADDRESS, ADMIN_EMAIL, msg)
+            await smtp_client.quit()
+
         await asyncio.sleep(CHECK_DB_PERIOD)
 
 async def send_mail(cnxn, cursor, emails_data):
+    # отправляет почту
     smtp_client = SMTP(hostname=HOST, port=PORT, use_tls=True, username=MY_ADDRESS, password=PASSWORD)
     await smtp_client.connect() 
     for e in emails_data:
@@ -117,13 +141,52 @@ async def send_mail(cnxn, cursor, emails_data):
         print("НОВОЕ СООБЩЕНИЕ  ", e)  ### test
         addrs = e[3].split(';')
         for a in addrs:
-            msg = f'To: {a.strip()}\nFrom: {MY_ADDRESS}\nSubject: {e[1]}\n\n{e[2]}'
+            msg = f'To: {a.strip()}\nFrom: {MY_ADDRESS}\nSubject: {e[1]}\n\n{e[2]}'.encode("utf-8")
             await smtp_client.sendmail(MY_ADDRESS, a.strip(), msg)
-            await rec_to_log(a.strip(), e[0])
+            log_rec = f'send message to {a.strip()} [ id = {e[0]} ]'
+            await rec_to_log(log_rec)
         await db_emails_rec_date(cnxn, cursor, id=e[0])
         print('SEND MAIL IS OK!!!')
     await smtp_client.quit()
 
+async def check_undelivered(host, user, password):
+    # проверяет неотправленные сообщения, написано для imap@yandex, для других серверов может потребоваться корректировка функции
+    imap_client = aioimaplib.IMAP4_SSL(host=host)
+    await imap_client.wait_hello_from_server()
+    await imap_client.login(user, password)
+    await imap_client.select('INBOX')
+    # вынести в конфиг это ???
+    typ, msg_nums = await imap_client.search('(FROM "mailer-daemon@yandex.ru" SUBJECT "Недоставленное сообщение")', 'UNSEEN')  #  
+    msg_nums = msg_nums[0].decode()
+    #msg_nums = '7 8'  #  для разработки
+
+    l = len(msg_nums.split())
+    if l == 0:
+        print('НЕТ НОВЫХ ОПОВЕЩЕНИЙ О НЕДОСТАВЛЕННОЙ ПОЧТЕ')    ###
+        await imap_client.close()
+        await imap_client.logout()
+        return []
+    print(f'ПОЛУЧЕНО {l} ОПОВЕЩЕНИЙ О НЕДОСТАВЛЕННОЙ ПОЧТЕ')    ###
+    msg_nums = msg_nums.replace(' ', ',')
+    typ, data = await imap_client.fetch(msg_nums, '(UID BODY[TEXT])')
+
+    undelivered = []
+    for m in range(1, len(data), 3):
+        msg = email.message_from_bytes(data[m])
+        msg = msg.get_payload()
+        msg_arrival_date = re.search(r'(?<=Arrival-Date: ).*', msg)[0].strip()
+        msg_recipient = re.search(r'(?<=Original-Recipient: rfc822;).*', msg)[0].strip()
+        print(msg_arrival_date, msg_recipient)  ###
+        undelivered.append((msg_arrival_date, msg_recipient))
+
+    await imap_client.close()
+    await imap_client.logout()
+
+    print(undelivered)  ###
+    return undelivered
+
+
+# === DATABASE FUNCTIONS ===
 async def db_emails_rec_date(cnxn, cursor, id):
     # пишет в базу дату/время отправки сообщения
     if IS_MOCK_DB:
@@ -143,12 +206,13 @@ async def mock_db_emails_rec_date(id):
                 f.seek(0)
                 json.dump(data, f)
 
-async def rec_to_log(receiver, id):
+#async def rec_to_log(receiver, id):
+async def rec_to_log(rec):
     # пишет в лог-файл запись об отправке сообщения
     current_time = str(datetime.datetime.now())
-    rec = f'{current_time}  --  send message to {receiver} [ id = {id} ]\n'
+    #rec = f'{current_time}  --  send message to {receiver} [ id = {id} ]\n'
     with open('log-mailsender.log', 'a') as f:
-        f.write(rec)
+        f.write(f'{current_time}  --  {rec}\n')
 
 async def db_emails_query(cursor):
     # выборка из базы данных необработанных (новых) записей
