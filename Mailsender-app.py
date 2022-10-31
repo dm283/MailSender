@@ -156,8 +156,15 @@ async def check_undelivered(host, user, password):
     await imap_client.login(user, password)
     await imap_client.select('INBOX')
     # вынести в конфиг это ???
-    typ, msg_nums = await imap_client.search('(FROM "mailer-daemon@yandex.ru" SUBJECT "Недоставленное сообщение")', 'UNSEEN')  #  
-    msg_nums = msg_nums[0].decode()
+    #typ, msg_nums = await imap_client.search('(FROM "mailer-daemon@yandex.ru" SUBJECT "Недоставленное сообщение")', 'UNSEEN')  #  
+    #msg_nums = msg_nums[0].decode()
+
+    typ, msg_nums_unseen = await imap_client.search('UNSEEN')
+    typ, msg_nums_from_subject = await imap_client.search('(FROM "mailer-daemon@yandex.ru" SUBJECT "Недоставленное сообщение")')
+    msg_nums_unseen = set(msg_nums_unseen[0].decode().split())
+    msg_nums_from_subject = set(msg_nums_from_subject[0].decode().split())
+    msg_nums = ' '.join(list(msg_nums_unseen & msg_nums_from_subject))
+
     #msg_nums = '7 8'  #  для разработки
 
     l = len(msg_nums.split())
