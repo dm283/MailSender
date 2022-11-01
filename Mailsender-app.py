@@ -1,3 +1,4 @@
+import sys
 import configparser
 import re
 import datetime
@@ -19,6 +20,8 @@ DB_TABLE = config['database']['db_table']  # db.schema.table
 CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn name
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
+USER_NAME = config['user_credentials']['name']
+USER_PASSWORD = config['user_credentials']['password']
 ADMIN_EMAIL = config['common']['admin_email']  # почта админа
 MY_ADDRESS, PASSWORD = config['smtp_server']['my_address'], config['smtp_server']['password']
 HOST, PORT = config['smtp_server']['host'], config['smtp_server']['port']
@@ -30,12 +33,15 @@ Subject: Mailsender - недоставленное сообщение\n
 Это сообщение отправленно сервисом Mailsender.\n""".encode('utf8')
 HOST_IMAP, PORT_IMAP = config['imap_server']['host'], config['imap_server']['port']
 
+ROBOT_START = False
+ROBOT_STOP = False
+APP_EXIT = False
 SIGN_IN_FLAG = False
 THEME_COLOR = 'Gainsboro'
 LBL_COLOR = THEME_COLOR
 ENT_COLOR = 'White'
 BTN_COLOR = 'Green'
-BTN_1_COLOR = 'Green'
+BTN_1_COLOR = 'IndianRed'
 BTN_2_COLOR = 'OrangeRed'
 BTN_3_COLOR = 'SlateGray'
 
@@ -45,26 +51,36 @@ async def btn_sign_click():
     global SIGN_IN_FLAG
     user = ent_user.get()
     password = ent_password.get()
-    if user == 'admin' and password == 'admin':
+    if user == USER_NAME and password == USER_PASSWORD:
         lbl_msg_sign["text"] = ''
         SIGN_IN_FLAG = True
         root.destroy()
     else:
         lbl_msg_sign["text"] = 'Incorrect username or password'
 
-async def btn_test_click():
+async def btn_exit_click():
     # кнопка Send test email
-    await test_send_email()
-    lbl_msg_admin["text"] = f'Test e-mail was send to \n {ADMIN_EMAIL}'
+    global ROBOT_START, ROBOT_STOP, APP_EXIT
+    if ROBOT_START:
+        lbl_msg_robot["text"] = 'Остановка робота...\nВыход из приложения...'
+        ROBOT_STOP = True
+        APP_EXIT = True
+    else:
+        sys.exit()
 
 async def btn_robot_run_click():
     # кнопка Start robot
-    lbl_msg_admin["text"] = 'Robot start'
+    global ROBOT_START, ROBOT_STOP
+    if not ROBOT_START:
+        lbl_msg_robot["text"] = 'Запуск робота...'
     await robot()
 
 async def btn_robot_stop_click():
     # кнопка Stop robot
-    lbl_msg_admin["text"] = 'Robot stop'
+    global ROBOT_START, ROBOT_STOP
+    if ROBOT_START:
+        lbl_msg_robot["text"] = 'Остановка робота...'
+        ROBOT_STOP = True
 
 async def window_signin():
     # рисует окно входа
@@ -77,38 +93,36 @@ async def window_signin():
     btn_sign.place(x=95, y=250)
     lbl_msg_sign.place(x=95, y=300)
 
-async def window_admin():
+async def window_robot():
     # рисует окно админки
     frm.pack()
-    lbl_admin.place(x=95, y=30)
+    lbl_robot.place(x=95, y=30)
     btn_robot_run.place(x=95, y=93)
     btn_robot_stop.place(x=95, y=136)
-    btn_test.place(x=125, y=195)
-    lbl_msg_admin.place(x=95, y=245)
+    btn_exit.place(x=125, y=195)
+    lbl_runner.place(x=95, y=240)
+    lbl_msg_robot.place(x=95, y=280)
 
 # === EMAIL FUNCTIONS ===
-async def test_send_email():
-    # отправляет тестовое сообщение
-    print(' test msg is sending...')
-    smtp_client = SMTP(hostname=HOST, port=PORT, use_tls=True, username=MY_ADDRESS, password=PASSWORD)
-    await smtp_client.connect()
-    await smtp_client.sendmail(MY_ADDRESS, ADMIN_EMAIL, TEST_MESSAGE)
-    await smtp_client.quit()
-    print('TEST MSG WAS SEND!')
-
 async def robot():
-    # стартует сервис отправки сообщений из базы данных
+    # запускает робота
+    global ROBOT_START, ROBOT_STOP
+    if ROBOT_START or ROBOT_STOP:
+        return
+    ROBOT_START = True  # флаг старта робота, предотвращает запуск нескольких экземпляров робота
     print('MOCK_DB =', IS_MOCK_DB)
     if IS_MOCK_DB:
         #  при IS_MOCK_DB приложение работает с mock-database (файл mock-db.json)
         await create_mock_db()
         cnxn, cursor = '', ''
     else:
-        cnxn = await aioodbc.connect(dsn=CONNECTION_STRING, loop=loop_admin)
+        cnxn = await aioodbc.connect(dsn=CONNECTION_STRING, loop=loop_robot)
         cursor = await cnxn.cursor()
         print(f'Создано подключение к базе данных {DB}')  ###
 
-    while True:
+    lbl_msg_robot["text"] = 'Робот в рабочем режиме'
+
+    while not ROBOT_STOP:
         emails_data = await db_emails_query(cursor)
         print(emails_data)
         print()
@@ -131,6 +145,16 @@ async def robot():
             await smtp_client.quit()
 
         await asyncio.sleep(CHECK_DB_PERIOD)
+
+    #  действия после остановки робота
+    await cursor.close()
+    await cnxn.close()
+    print("Робот остановлен")
+    ROBOT_START, ROBOT_STOP = False, False
+    lbl_msg_robot["text"] = 'Робот остановлен'
+    if APP_EXIT:
+        sys.exit()
+
 
 async def send_mail(cnxn, cursor, emails_data):
     # отправляет почту
@@ -155,18 +179,12 @@ async def check_undelivered(host, user, password):
     await imap_client.wait_hello_from_server()
     await imap_client.login(user, password)
     await imap_client.select('INBOX')
-    # вынести в конфиг это ???
-    #typ, msg_nums = await imap_client.search('(FROM "mailer-daemon@yandex.ru" SUBJECT "Недоставленное сообщение")', 'UNSEEN')  #  
-    #msg_nums = msg_nums[0].decode()
-
     typ, msg_nums_unseen = await imap_client.search('UNSEEN')
     typ, msg_nums_from_subject = await imap_client.search('(FROM "mailer-daemon@yandex.ru" SUBJECT "Недоставленное сообщение")')
     msg_nums_unseen = set(msg_nums_unseen[0].decode().split())
     msg_nums_from_subject = set(msg_nums_from_subject[0].decode().split())
     msg_nums = ' '.join(list(msg_nums_unseen & msg_nums_from_subject))
-
     #msg_nums = '7 8'  #  для разработки
-
     l = len(msg_nums.split())
     if l == 0:
         print('НЕТ НОВЫХ ОПОВЕЩЕНИЙ О НЕДОСТАВЛЕННОЙ ПОЧТЕ')    ###
@@ -246,8 +264,8 @@ async def create_mock_db():
     # создает mock-database при запуске приложения, если IS_MOCK_DB = True
     data = {'emails': [
         {'UniqueIndexField': 1, 'subj': 'test1', 'textemail': 'This is the test message 1!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}, 
-        {'UniqueIndexField': 2, 'subj': 'test2', 'textemail': 'This is the test message 2!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}, 
-        {'UniqueIndexField': 3, 'subj': 'test3', 'textemail': 'This is the test message 3!', 'adrto': 'testbox283@yandex.ru; testbox283@mail.ru', 'dates': None}
+        {'UniqueIndexField': 2, 'subj': 'test2', 'textemail': 'This is the test message 2!', 'adrto': 'testbox283@yandex.ru; t34rfe94fewf@mail.ru', 'dates': None}, 
+        {'UniqueIndexField': 3, 'subj': 'test3', 'textemail': 'This is the test message 3!', 'adrto': 'testbox283@yandex.ru', 'dates': None}
         ]}
     with open('mock-db.json', 'w') as f:
         json.dump(data, f)
@@ -273,36 +291,50 @@ async def show():
         root.update()
         await asyncio.sleep(.1)
 
-loop = asyncio.get_event_loop()
-loop.run_until_complete(show())
+development_mode = False     # True - для разработки окна робота переход сразу на него без sign in
+if development_mode:    # для разработки окна робота переход сразу на него без sign in
+    SIGN_IN_FLAG = True
+else:
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(show())
 
 # выход из приложения если принудительно закрыто окно логина
 # c asyncio не работает, надо выяснять!
 if not SIGN_IN_FLAG:
     print('SIGN IN FALSE')
-    print('loop = ', loop)
-    quit()
+    #print('loop = ', loop)
+    sys.exit()
 
 
-# ============== window admin
-root_admin = tk.Tk()
-root_admin.title('MailSender')
+# ============== window robot
+root_robot = tk.Tk()
+root_robot.title('MailSender')
 frm = tk.Frame(bg=THEME_COLOR, width=400, height=400)
-lbl_admin = tk.Label(master=frm, text='MailSender', bg=LBL_COLOR, font=("Arial", 15), width=20, height=2)
-btn_robot_run = tk.Button(master=frm, bg=BTN_2_COLOR, fg='White', text='Start robot', font=("Arial", 12, "bold"), 
-                    width=22, height=1, command=lambda: loop_admin.create_task(btn_robot_run_click()))
-btn_robot_stop = tk.Button(master=frm, bg=BTN_3_COLOR, fg='White', text='Stop robot', font=("Arial", 12, "bold"), 
-                    width=22, height=1, command=lambda: loop_admin.create_task(btn_robot_stop_click()))
-btn_test = tk.Button(master=frm, bg=BTN_1_COLOR, fg='Black', text='Send test e-mail', font=("Arial", 12), 
-                    width=16, height=1, command=lambda: loop_admin.create_task(btn_test_click()))
-lbl_msg_admin = tk.Label(master=frm, bg=LBL_COLOR, font=("Arial", 12), width=25, height=2)
+lbl_robot = tk.Label(master=frm, text='MailSender', bg=LBL_COLOR, font=("Arial", 15), width=20, height=2)
 
-async def show_admin():
+animation = "░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒"
+lbl_runner = tk.Label(master=frm, fg='DodgerBlue', text="")
+
+btn_robot_run = tk.Button(master=frm, bg=BTN_2_COLOR, fg='White', text='Запуск робота', font=("Arial", 12, "bold"), 
+                    width=22, height=1, command=lambda: loop_robot.create_task(btn_robot_run_click()))
+btn_robot_stop = tk.Button(master=frm, bg=BTN_3_COLOR, fg='White', text='Остановка робота', font=("Arial", 12, "bold"), 
+                    width=22, height=1, command=lambda: loop_robot.create_task(btn_robot_stop_click()))
+btn_exit = tk.Button(master=frm, bg=BTN_1_COLOR, fg='Black', text='Выход', font=("Arial", 12), 
+                    width=16, height=1, command=lambda: loop_robot.create_task(btn_exit_click()))
+lbl_msg_robot = tk.Label(master=frm, bg=LBL_COLOR, font=("Arial", 10), width=25, height=2)
+
+async def show_robot():
     #
-    await window_admin()
+    global animation
+
+    await window_robot()
     while True:
-        root_admin.update()
+        lbl_runner["text"] = animation
+        if ROBOT_START:
+            animation = animation[1:] + animation[0]
+
+        root_robot.update()
         await asyncio.sleep(.1)
 
-loop_admin = asyncio.get_event_loop()
-loop_admin.run_until_complete(show_admin())
+loop_robot = asyncio.get_event_loop()
+loop_robot.run_until_complete(show_robot())
