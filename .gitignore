@@ -7,3 +7,4 @@ venv/
 build/
 config.ini
 setup.py
+Mailsender-admin.py
