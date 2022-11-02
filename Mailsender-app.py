@@ -28,7 +28,7 @@ smtp_server_password = (refKey.decrypt(hashed_smtp_server_password).decode('utf-
 IS_MOCK_DB = True if config['database']['is_mock_db'] == 'True' else False # для локального тестирования приложение работает с симулятором базы данных файл mock-db.json
 DB = config['database']['db']  # база данных mssql/posgres
 DB_TABLE = config['database']['db_table']  # db.schema.table
-CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn name
+CONNECTION_STRING = config['database']['connection_string']  # odbc driver system dsn name
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
 USER_NAME = config['user_credentials']['name']
