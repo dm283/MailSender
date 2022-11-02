@@ -1,5 +1,6 @@
 import sys
 import configparser
+from cryptography.fernet import Fernet
 import re
 import datetime
 import json
@@ -14,6 +15,16 @@ import email
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+with open('rec-k.txt') as f:
+    rkey = f.read().encode('utf-8')
+
+hashed_user_credentials_password = config['user_credentials']['password']
+hashed_smtp_server_password = config['smtp_server']['password']
+
+refKey = Fernet(rkey)
+user_credentials_password = (refKey.decrypt(hashed_user_credentials_password).decode('utf-8'))
+smtp_server_password = (refKey.decrypt(hashed_smtp_server_password).decode('utf-8'))
+
 IS_MOCK_DB = True if config['database']['is_mock_db'] == 'True' else False # для локального тестирования приложение работает с симулятором базы данных файл mock-db.json
 DB = config['database']['db']  # база данных mssql/posgres
 DB_TABLE = config['database']['db_table']  # db.schema.table
@@ -21,9 +32,10 @@ CONNECTION_STRING = f"DSN={config['database']['dsn']}"  # odbc driver system dsn
 CHECK_DB_PERIOD = int(config['common']['check_db_period'])  # период проверки новых записей в базе данных
 
 USER_NAME = config['user_credentials']['name']
-USER_PASSWORD = config['user_credentials']['password']
+# USER_PASSWORD = config['user_credentials']['password']
+USER_PASSWORD = user_credentials_password
 ADMIN_EMAIL = config['common']['admin_email']  # почта админа
-MY_ADDRESS, PASSWORD = config['smtp_server']['my_address'], config['smtp_server']['password']
+MY_ADDRESS, PASSWORD = config['smtp_server']['my_address'], smtp_server_password  #config['smtp_server']['password']
 HOST, PORT = config['smtp_server']['host'], config['smtp_server']['port']
 TEST_MESSAGE = f"""To: {ADMIN_EMAIL}\nFrom: {MY_ADDRESS}
 Subject: Mailsender - тестовое сообщение\n
