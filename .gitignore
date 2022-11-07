@@ -2,9 +2,8 @@
 *.txt
 *.json
 *.sql
+*.ini
 venv/
 рабочие/
 build/
-config.ini
 setup.py
-Mailsender-admin.py
