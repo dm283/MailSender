@@ -38,6 +38,8 @@ UNDELIVERED_MESSAGE = f"""To: {config['common']['admin_email']}\nFrom: {config['
 Subject: Mailsender - недоставленное сообщение\n
 Это сообщение отправленно сервисом Mailsender.\n""".encode('utf8')
 
+SIGN_IN_FLAG = False
+
 THEME_COLOR = 'White' #'Gainsboro'
 LBL_COLOR = THEME_COLOR
 ENT_COLOR = 'White'
@@ -46,52 +48,19 @@ BTN_1_COLOR = 'IndianRed'
 BTN_2_COLOR = 'OrangeRed'
 BTN_3_COLOR = 'SlateGray'
 
-# ============== window admin
-root_admin = tk.Tk()
-root_admin.title('MailSender administration panel')
-notebook = ttk.Notebook(root_admin)
-
-# в каждом Frame (section) создаются подфреймы с Labels и Enrty (key и key-value)
-frm, frm_params, frm_test, lbl, ent = {}, {}, {}, {}, {}
-
-for s in config.sections():
-    frm[s], lbl[s], ent[s] = tk.Frame(notebook, bg=THEME_COLOR, width=400, ), {}, {}
-    
-    frm_params[s] = tk.Frame(frm[s], bg=THEME_COLOR, width=400, )
-    frm_test[s] = tk.Frame(frm[s], bg=THEME_COLOR, width=400, )
-
-    for k, v in config.items(s):
-        if k == 'section_description':
-            lbl[s][k] = tk.Label(frm_params[s], bg=THEME_COLOR, text = v, )
-            continue
-        lbl[s][k] = tk.Label(frm_params[s], bg=THEME_COLOR, text = k, width=20, anchor='w', )
-        ent[s][k] = tk.Entry(frm_params[s], width=30, highlightthickness=1, highlightcolor = "Gainsboro", )
-
-# формирование виджетов для полей со скрытием контента
-cbt_v1, cbt = {}, {}
-for s, k in password_section_key_list:
-    cbt_v1[s], cbt[s] = {}, {}
-    cbt_v1[s][k] = tk.IntVar(value = 0)
-    cbt[s][k] = tk.Checkbutton(frm_params[s], bg=THEME_COLOR, text = 'Show password', variable = cbt_v1[s][k], onvalue = 1, offvalue = 0)
-    ent[s][k]['show'] = '*'
-cbt['user_credentials']['password']['command'] = lambda: loop_admin.create_task(show_password('user_credentials', 'password'))
-cbt['smtp_server']['password']['command'] = lambda: loop_admin.create_task(show_password('smtp_server', 'password'))
-
-# формирование элемнтов с функционалом тестирования
-btn_test_db = tk.Button(frm_test['database'], text='Тест', width = 15, command=lambda: loop_admin.create_task(btn_test_db_click()))
-lbl_msg_test_db = tk.Label(frm_test['database'], bg=THEME_COLOR, width = 45, anchor='w', )
-
-btn_test_smtp = tk.Button(frm_test['smtp_server'], text='Тест', width = 15, command=lambda: loop_admin.create_task(btn_test_smtp_click()))
-lbl_msg_test_smtp = tk.Label(frm_test['smtp_server'], bg=THEME_COLOR, width = 45, anchor='w', )
-
-btn_test_imap = tk.Button(frm_test['imap_server'], text='Тест', width = 15, command=lambda: loop_admin.create_task(btn_test_imap_click()))
-lbl_msg_test_imap = tk.Label(frm_test['imap_server'], bg=THEME_COLOR, width = 45, anchor='w', )
-
-# формирование фрейма с общим функционалом (сохранение конфига)
-frm_footer = tk.Frame(root_admin, width=400, height=280, )
-btn_save_config = tk.Button(frm_footer, text='Сохранить', width = 15, command=lambda: loop_admin.create_task(btn_save_config_click()))
-lbl_config_msg = tk.Label(frm_footer, )
-
+# === INTERFACE FUNCTIONS ===
+async def btn_sign_click():
+    # кнопка sign-in
+    global SIGN_IN_FLAG
+    user = ent_user.get()
+    password = ent_password.get()
+    if user == 'admin' and password == 'admin':
+        lbl_msg_sign["text"] = ''
+        SIGN_IN_FLAG = True
+        root.destroy()
+    else:
+        lbl_msg_sign["text"] = 'Incorrect username or password'
+        
 async def show_password(s, k):
     # показывает/скрывает пароль
     ent[s][k]['show'] = '' if(cbt_v1[s][k].get() == 1) else '*'
@@ -193,6 +162,20 @@ async def btn_save_config_click():
     for (s, k) in password_section_key_list:
         config[s][k] = ent[s][k].get()
 
+async def show_signin():
+    # рисует окно входа
+    frm.pack()
+    lbl_sign.place(x=95, y=30)
+    lbl_user.place(x=95, y=83)
+    ent_user.place(x=95, y=126)
+    lbl_password.place(x=95, y=150)
+    ent_password.place(x=95, y=193)
+    btn_sign.place(x=95, y=250)
+    lbl_msg_sign.place(x=95, y=300)
+    while not SIGN_IN_FLAG:
+        root.update()
+        await asyncio.sleep(.1)
+
 async def show_admin():
     #
     notebook.pack(padx=10, pady=10, fill='both', expand=True)
@@ -229,6 +212,85 @@ async def show_admin():
     while True:
         root_admin.update()
         await asyncio.sleep(.1)
+
+
+
+# ============== window sign in
+root = tk.Tk()
+root.title('MailSender administration panel')
+frm = tk.Frame(bg=THEME_COLOR, width=400, height=400)
+lbl_sign = tk.Label(master=frm, text='Sign in to MailSender', bg=LBL_COLOR, font=("Arial", 15), width=20, height=2)
+lbl_user = tk.Label(master=frm, text='Username', bg=LBL_COLOR, font=("Arial", 12), anchor='w', width=25, height=2)
+ent_user = tk.Entry(master=frm, bg=ENT_COLOR, font=("Arial", 12), width=25, )
+lbl_password = tk.Label(master=frm, text='Password', bg=LBL_COLOR, font=("Arial", 12), anchor='w', width=25, height=2)
+ent_password = tk.Entry(master=frm, bg=ENT_COLOR, font=("Arial", 12), width=25, )
+btn_sign = tk.Button(master=frm, bg=BTN_COLOR, fg='White', text='Sign in', font=("Arial", 12, "bold"), 
+                    width=22, height=1, command=lambda: loop.create_task(btn_sign_click()))
+lbl_msg_sign = tk.Label(master=frm, bg=LBL_COLOR, fg='PaleVioletRed', font=("Arial", 12), width=25, height=2)
+
+development_mode = False     # True - для разработки окна робота переход сразу на него без sign in
+if development_mode:    # для разработки окна робота переход сразу на него без sign in
+    SIGN_IN_FLAG = True
+else:
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(show_signin())
+
+
+# выход из приложения если принудительно закрыто окно логина
+# c asyncio не работает, надо выяснять!
+if not SIGN_IN_FLAG:
+    print('SIGN IN FALSE')
+    #print('loop = ', loop)
+    sys.exit()
+
+
+
+# ============== window admin
+root_admin = tk.Tk()
+root_admin.title('MailSender administration panel')
+notebook = ttk.Notebook(root_admin)
+
+# в каждом Frame (section) создаются подфреймы с Labels и Enrty (key и key-value)
+frm, frm_params, frm_test, lbl, ent = {}, {}, {}, {}, {}
+
+for s in config.sections():
+    frm[s], lbl[s], ent[s] = tk.Frame(notebook, bg=THEME_COLOR, width=400, ), {}, {}
+    
+    frm_params[s] = tk.Frame(frm[s], bg=THEME_COLOR, width=400, )
+    frm_test[s] = tk.Frame(frm[s], bg=THEME_COLOR, width=400, )
+
+    for k, v in config.items(s):
+        if k == 'section_description':
+            lbl[s][k] = tk.Label(frm_params[s], bg=THEME_COLOR, text = v, )
+            continue
+        lbl[s][k] = tk.Label(frm_params[s], bg=THEME_COLOR, text = k, width=20, anchor='w', )
+        ent[s][k] = tk.Entry(frm_params[s], width=30, highlightthickness=1, highlightcolor = "Gainsboro", )
+
+# формирование виджетов для полей со скрытием контента
+cbt_v1, cbt = {}, {}
+for s, k in password_section_key_list:
+    cbt_v1[s], cbt[s] = {}, {}
+    cbt_v1[s][k] = tk.IntVar(value = 0)
+    cbt[s][k] = tk.Checkbutton(frm_params[s], bg=THEME_COLOR, text = 'Show password', variable = cbt_v1[s][k], onvalue = 1, offvalue = 0)
+    ent[s][k]['show'] = '*'
+cbt['user_credentials']['password']['command'] = lambda: loop_admin.create_task(show_password('user_credentials', 'password'))
+cbt['smtp_server']['password']['command'] = lambda: loop_admin.create_task(show_password('smtp_server', 'password'))
+
+# формирование элемнтов с функционалом тестирования
+btn_test_db = tk.Button(frm_test['database'], text='Тест', width = 15, command=lambda: loop_admin.create_task(btn_test_db_click()))
+lbl_msg_test_db = tk.Label(frm_test['database'], bg=THEME_COLOR, width = 45, anchor='w', )
+
+btn_test_smtp = tk.Button(frm_test['smtp_server'], text='Тест', width = 15, command=lambda: loop_admin.create_task(btn_test_smtp_click()))
+lbl_msg_test_smtp = tk.Label(frm_test['smtp_server'], bg=THEME_COLOR, width = 45, anchor='w', )
+
+btn_test_imap = tk.Button(frm_test['imap_server'], text='Тест', width = 15, command=lambda: loop_admin.create_task(btn_test_imap_click()))
+lbl_msg_test_imap = tk.Label(frm_test['imap_server'], bg=THEME_COLOR, width = 45, anchor='w', )
+
+# формирование фрейма с общим функционалом (сохранение конфига)
+frm_footer = tk.Frame(root_admin, width=400, height=280, )
+btn_save_config = tk.Button(frm_footer, text='Сохранить', width = 15, command=lambda: loop_admin.create_task(btn_save_config_click()))
+lbl_config_msg = tk.Label(frm_footer, )
+
 
 loop_admin = asyncio.get_event_loop()
 loop_admin.run_until_complete(show_admin())
