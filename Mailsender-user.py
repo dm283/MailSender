@@ -256,8 +256,7 @@ async def db_emails_query(cursor):
     if IS_MOCK_DB:
         rows = await mock_db_emails_query()
     else:
-        #await cursor.execute(f'select id, msg_subject, msg_text, receivers from {DB_TABLE} where handling_date is null')
-        await cursor.execute(f'select UniqueIndexField, subj, textemail, adrto from {DB_TABLE} where dates is null')
+        await cursor.execute(f'select UniqueIndexField, subj, textemail, adrto from {DB_TABLE} where dates is null order by datep')
         rows = await cursor.fetchall()  # список кортежей
     return rows
 
