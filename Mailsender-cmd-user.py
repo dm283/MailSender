@@ -1,3 +1,4 @@
+import os
 import sys
 import configparser
 from cryptography.fernet import Fernet
@@ -61,7 +62,15 @@ UNDELIVERED_MESSAGE = f"""To: {ADMIN_EMAIL}\nFrom: {MY_ADDRESS}
 Subject: Mailsender - недоставленное сообщение\n
 Это сообщение отправленно сервисом Mailsender.\n""".encode('utf8')
 HOST_IMAP, PORT_IMAP = config['imap_server']['host'], config['imap_server']['port']
-REGEX_EMAIL_VALID = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+
+REGEX_EMAIL_VALID = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b' # шаблон для валидации e-mail адреса
+
+ERROR_EMAIL_LIST = []  # список несуществующих адресов
+error_email_list_path = 'error-emails-list.log'
+if os.path.exists(error_email_list_path):
+    with open(error_email_list_path, 'r') as f:
+        for l in f.readlines():
+            ERROR_EMAIL_LIST.append(l.split('\t')[-1].strip())
 
 # === EMAIL FUNCTIONS ===
 async def robot():
@@ -96,6 +105,13 @@ async def robot():
             #print(f'undelivered:  {u}')
             log_rec = f'Недоставлено сообщение, отправленное {u[0]} на несуществующий адрес {u[1]}'
             await rec_to_log(log_rec)
+
+            # запись несуществующего адреса в error-email-list
+            eel_rec = f'{u[0]}\t{u[1]}'
+            await rec_to_error_emails_list(eel_rec)
+            if u[1] not in ERROR_EMAIL_LIST:
+                ERROR_EMAIL_LIST.append(u[1])
+
             msg = UNDELIVERED_MESSAGE + log_rec.encode('utf-8')
             await smtp_client.sendmail(MY_ADDRESS, ADMIN_EMAIL, msg)
         await smtp_client.quit()
@@ -116,9 +132,13 @@ async def send_mail(cnxn, cursor, emails_data):
         for a in addrs:
             a = a.strip()
             if(re.fullmatch(REGEX_EMAIL_VALID, a)):
-                msg = f'To: {a.strip()}\nFrom: {MY_ADDRESS}\nSubject: {e[1]}\n\n{e[2]}'.encode("utf-8")
-                await smtp_client.sendmail(MY_ADDRESS, a.strip(), msg)
-                log_rec = f'send message to {a.strip()} [ id = {e[0]} ]'
+                if a not in ERROR_EMAIL_LIST:
+                    msg = f'To: {a.strip()}\nFrom: {MY_ADDRESS}\nSubject: {e[1]}\n\n{e[2]}'.encode("utf-8")
+                    await smtp_client.sendmail(MY_ADDRESS, a.strip(), msg)
+                    log_rec = f'send message to {a.strip()} [ id = {e[0]} ]'
+                else:
+                    print(f'адрес {a} в error-list')   ###
+                    log_rec = f'адрес {a} в error-list'  ###
             else:
                 log_rec = f'invalid email address {a} [ id = {e[0]} ]'
             await rec_to_log(log_rec)
@@ -186,7 +206,13 @@ async def rec_to_log(rec):
     # пишет в лог-файл запись об отправке сообщения
     current_time = str(datetime.datetime.now())
     with open('log-mailsender.log', 'a') as f:
-        f.write(f'{current_time}  --  {rec}\n')
+        f.write(f'{current_time}\t{rec}\n')
+
+async def rec_to_error_emails_list(rec):
+    # пишет в лог-файл запись об отправке сообщения
+    current_time = str(datetime.datetime.now())
+    with open('error-emails-list.log', 'a') as f:
+        f.write(f'{current_time}\t{rec}\n')
 
 async def db_emails_query(cursor):
     # выборка из базы данных необработанных (новых) записей
