@@ -61,6 +61,7 @@ UNDELIVERED_MESSAGE = f"""To: {ADMIN_EMAIL}\nFrom: {MY_ADDRESS}
 Subject: Mailsender - недоставленное сообщение\n
 Это сообщение отправленно сервисом Mailsender.\n""".encode('utf8')
 HOST_IMAP, PORT_IMAP = config['imap_server']['host'], config['imap_server']['port']
+REGEX_EMAIL_VALID = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
 
 # === EMAIL FUNCTIONS ===
 async def robot():
@@ -113,12 +114,16 @@ async def send_mail(cnxn, cursor, emails_data):
         # print("Новая запись ", e)  ### test
         addrs = e[3].split(';')
         for a in addrs:
-            msg = f'To: {a.strip()}\nFrom: {MY_ADDRESS}\nSubject: {e[1]}\n\n{e[2]}'.encode("utf-8")
-            await smtp_client.sendmail(MY_ADDRESS, a.strip(), msg)
-            log_rec = f'send message to {a.strip()} [ id = {e[0]} ]'
+            a = a.strip()
+            if(re.fullmatch(REGEX_EMAIL_VALID, a)):
+                msg = f'To: {a.strip()}\nFrom: {MY_ADDRESS}\nSubject: {e[1]}\n\n{e[2]}'.encode("utf-8")
+                await smtp_client.sendmail(MY_ADDRESS, a.strip(), msg)
+                log_rec = f'send message to {a.strip()} [ id = {e[0]} ]'
+            else:
+                log_rec = f'invalid email address {a} [ id = {e[0]} ]'
             await rec_to_log(log_rec)
         await db_emails_rec_date(cnxn, cursor, id=e[0])
-        print('Сообщения успешно отправлены')
+        print('Запись обработана')
     await smtp_client.quit()
 
 async def check_undelivered(host, user, password):
