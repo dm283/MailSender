@@ -220,6 +220,7 @@ async def show_admin():
 
 # ============== window sign in
 root = tk.Tk()
+root.resizable(0, 0)  # делает неактивной кнопку Развернуть
 root.title('MailSender administration panel')
 frm = tk.Frame(bg=THEME_COLOR, width=400, height=400)
 lbl_sign = tk.Label(master=frm, text='Sign in to MailSender', bg=LBL_COLOR, font=("Arial", 15), width=20, height=2)
@@ -252,6 +253,7 @@ if not SIGN_IN_FLAG:
 
 # ============== window admin
 root_admin = tk.Tk()
+root_admin.resizable(0, 0)  # делает неактивной кнопку Развернуть
 root_admin.title('MailSender administration panel')
 notebook = ttk.Notebook(root_admin)
 

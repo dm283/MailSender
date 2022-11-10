@@ -289,6 +289,7 @@ async def create_mock_db():
 
 # ============== window sign in
 root = tk.Tk()
+root.resizable(0, 0)  # делает неактивной кнопку Развернуть
 root.title('MailSender')
 frm = tk.Frame(bg=THEME_COLOR, width=400, height=400)
 lbl_sign = tk.Label(master=frm, text='Sign in to MailSender', bg=LBL_COLOR, font=("Arial", 15), width=20, height=2)
@@ -329,6 +330,7 @@ if not SIGN_IN_FLAG:
 
 # ============== window robot
 root_robot = tk.Tk()
+root_robot.resizable(0, 0)  # делает неактивной кнопку Развернуть
 root_robot.title('MailSender')
 frm = tk.Frame(bg=THEME_COLOR, width=400, height=400)
 lbl_robot = tk.Label(master=frm, text='MailSender', bg=LBL_COLOR, font=("Arial", 15), width=20, height=2)
