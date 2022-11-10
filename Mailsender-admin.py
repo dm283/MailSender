@@ -23,11 +23,9 @@ with open('rec-k.txt') as f:
 refKey = Fernet(rkey)
 
 # расшифровка паролей
-password_section_key_list = [ ('user_credentials', 'password'), ('admin_credentials', 'password'), ('smtp_server', 'password'), ] #('admin_credentials', 'password'), 
-
+password_section_key_list = [ ('user_credentials', 'password'), ('admin_credentials', 'password'), ('smtp_server', 'password'), ]
 for s in password_section_key_list:
     hashed = config[s[0]][s[1]]
-    print(s, hashed)
     config[s[0]][s[1]] = (refKey.decrypt(hashed).decode('utf-8')) if hashed != '' else config[s[0]][s[1]]
 
 TEST_MESSAGE = f"""To: {config['common']['admin_email']}\nFrom: {config['smtp_server']['my_address']}
@@ -53,13 +51,16 @@ async def btn_sign_click():
     global SIGN_IN_FLAG
     user = ent_user.get()
     password = ent_password.get()
-    # if user == 'admin' and password == 'admin':
     if user == config['admin_credentials']['name'] and password == config['admin_credentials']['password']:
         lbl_msg_sign["text"] = ''
         SIGN_IN_FLAG = True
         root.destroy()
     else:
         lbl_msg_sign["text"] = 'Incorrect username or password'
+
+async def show_password_signin():
+    # показывает/скрывает пароль в окне входа
+    ent_password['show'] = '' if(cbt_sign_show_pwd_v1.get() == 1) else '*'
         
 async def show_password(s, k):
     # показывает/скрывает пароль
@@ -172,16 +173,16 @@ async def show_signin():
     ent_user.place(x=95, y=126)
     lbl_password.place(x=95, y=150)
     ent_password.place(x=95, y=193)
-    btn_sign.place(x=95, y=250)
-    lbl_msg_sign.place(x=95, y=300)
+    cbt_sign_show_pwd.place(x=95, y=220)
+    btn_sign.place(x=95, y=260)
+    lbl_msg_sign.place(x=95, y=310)
     while not SIGN_IN_FLAG:
         root.update()
         await asyncio.sleep(.1)
 
 async def show_admin():
-    #
+    # рисует окно администрирования
     notebook.pack(padx=10, pady=10, fill='both', expand=True)
-
     for s in config.sections():
         notebook.add(frm[s], text = s)
         frm_params[s].pack(padx=5, pady=(5, 0), fill='both', expand=True)
@@ -225,7 +226,12 @@ lbl_sign = tk.Label(master=frm, text='Sign in to MailSender', bg=LBL_COLOR, font
 lbl_user = tk.Label(master=frm, text='Username', bg=LBL_COLOR, font=("Arial", 12), anchor='w', width=25, height=2)
 ent_user = tk.Entry(master=frm, bg=ENT_COLOR, font=("Arial", 12), width=25, )
 lbl_password = tk.Label(master=frm, text='Password', bg=LBL_COLOR, font=("Arial", 12), anchor='w', width=25, height=2)
-ent_password = tk.Entry(master=frm, bg=ENT_COLOR, font=("Arial", 12), width=25, )
+ent_password = tk.Entry(master=frm, show = '*', bg=ENT_COLOR, font=("Arial", 12), width=25, )
+
+cbt_sign_show_pwd_v1 = tk.IntVar(value = 0)
+cbt_sign_show_pwd = tk.Checkbutton(frm, bg=THEME_COLOR, text='Show password', variable=cbt_sign_show_pwd_v1, onvalue=1, offvalue=0, 
+                                    command=lambda: loop.create_task(show_password_signin()))
+
 btn_sign = tk.Button(master=frm, bg=BTN_COLOR, fg='White', text='Sign in', font=("Arial", 12, "bold"), 
                     width=22, height=1, command=lambda: loop.create_task(btn_sign_click()))
 lbl_msg_sign = tk.Label(master=frm, bg=LBL_COLOR, fg='PaleVioletRed', font=("Arial", 12), width=25, height=2)
@@ -237,15 +243,12 @@ else:
     loop = asyncio.get_event_loop()
     loop.run_until_complete(show_signin())
 
-
 # выход из приложения если принудительно закрыто окно логина
 # c asyncio не работает, надо выяснять!
 if not SIGN_IN_FLAG:
     print('SIGN IN FALSE')
     #print('loop = ', loop)
     sys.exit()
-
-
 
 # ============== window admin
 root_admin = tk.Tk()
