@@ -22,14 +22,13 @@ with open('rec-k.txt') as f:
     rkey = f.read().encode('utf-8')
 refKey = Fernet(rkey)
 
-# обработка зашифрованных значений
-password_section_key_list = [ ('user_credentials', 'password'), ('smtp_server', 'password'), ]
-hashed_user_credentials_password = config['user_credentials']['password']
-user_credentials_password = (refKey.decrypt(hashed_user_credentials_password).decode('utf-8'))
-config['user_credentials']['password'] = user_credentials_password
-hashed_smtp_server_password = config['smtp_server']['password']
-smtp_server_password = (refKey.decrypt(hashed_smtp_server_password).decode('utf-8'))
-config['smtp_server']['password'] = smtp_server_password
+# расшифровка паролей
+password_section_key_list = [ ('user_credentials', 'password'), ('admin_credentials', 'password'), ('smtp_server', 'password'), ] #('admin_credentials', 'password'), 
+
+for s in password_section_key_list:
+    hashed = config[s[0]][s[1]]
+    print(s, hashed)
+    config[s[0]][s[1]] = (refKey.decrypt(hashed).decode('utf-8')) if hashed != '' else config[s[0]][s[1]]
 
 TEST_MESSAGE = f"""To: {config['common']['admin_email']}\nFrom: {config['smtp_server']['my_address']}
 Subject: Mailsender - тестовое сообщение\n
@@ -54,7 +53,8 @@ async def btn_sign_click():
     global SIGN_IN_FLAG
     user = ent_user.get()
     password = ent_password.get()
-    if user == 'admin' and password == 'admin':
+    # if user == 'admin' and password == 'admin':
+    if user == config['admin_credentials']['name'] and password == config['admin_credentials']['password']:
         lbl_msg_sign["text"] = ''
         SIGN_IN_FLAG = True
         root.destroy()
@@ -158,6 +158,8 @@ async def btn_save_config_click():
     with open(CONFIG_FILE, 'w', encoding='utf-8') as configfile:
         config.write(configfile)
     lbl_config_msg['text'] = f'Конфигурация сохранена в файл {CONFIG_FILE}'
+    # после сохранения конфига сообщения о тестировании обнуляются
+    lbl_msg_test_imap['text'], lbl_msg_test_smtp['text'], lbl_msg_test_db['text'] = '', '', ''
     # запись в переменную расшифрованного пароля (инче остается хэшированный, который нельзя использовать)
     for (s, k) in password_section_key_list:
         config[s][k] = ent[s][k].get()
@@ -274,6 +276,7 @@ for s, k in password_section_key_list:
     cbt[s][k] = tk.Checkbutton(frm_params[s], bg=THEME_COLOR, text = 'Show password', variable = cbt_v1[s][k], onvalue = 1, offvalue = 0)
     ent[s][k]['show'] = '*'
 cbt['user_credentials']['password']['command'] = lambda: loop_admin.create_task(show_password('user_credentials', 'password'))
+cbt['admin_credentials']['password']['command'] = lambda: loop_admin.create_task(show_password('admin_credentials', 'password'))
 cbt['smtp_server']['password']['command'] = lambda: loop_admin.create_task(show_password('smtp_server', 'password'))
 
 # формирование элемнтов с функционалом тестирования
